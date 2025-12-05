@@ -1,0 +1,23 @@
+# Python venv
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 上傳 / 產生的圖片
+uploads/
+static/processed_*
+static/*.png
+static/*.jpg
+static/*.jpeg
+
+# 環境設定
+.env
+*.env
+
+# 其他雜項
+.DS_Store

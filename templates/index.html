@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>地圖截圖 + 圖片文字去除</title>
+
+    <!-- Leaflet CSS（地圖用） -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+
+    <style>
+      :root {
+        --bg: #0b0f12;
+        --card: #10161b;
+        --muted: #5b6b75;
+        --text: #e7eef3;
+        --acc: #4ea1ff;
+        --border: #1f2a33;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans",
+          "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 24px auto;
+        padding: 0 16px 32px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+        margin-bottom: 20px;
+      }
+      .header {
+        padding: 18px 18px 0 18px;
+      }
+      .title {
+        font-size: 20px;
+        margin: 0 0 8px;
+      }
+      .sub {
+        margin: 0 0 18px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        padding: 0 18px 16px 18px;
+        flex-wrap: wrap;
+      }
+      .controls input {
+        flex: 1 1 320px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: #0e141a;
+        color: var(--text);
+        outline: none;
+      }
+      .btn {
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: #0e141a;
+        color: var(--text);
+        cursor: pointer;
+        font-size: 14px;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        border-color: #2c3c47;
+      }
+      .btn[disabled] {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #map {
+        height: 420px;
+        border-top-left-radius: 16px;
+        border-top-right-radius: 16px;
+      }
+      .bar {
+        display: flex;
+        gap: 8px;
+        padding: 12px 18px;
+        border-top: 1px solid var(--border);
+        align-items: center;
+      }
+      .bar .coord {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin-left: auto;
+      }
+      .output {
+        margin-top: 12px;
+        padding: 12px 18px 18px;
+        font-size: 13px;
+      }
+      .thumb {
+        max-width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        display: block;
+        margin: 8px auto 0;
+      }
+
+      /* 下半部：原始/處理後 Canvas 區塊 */
+      #canvas-card {
+        padding: 18px;
+      }
+      #canvas-container {
+        display: flex;
+        justify-content: space-around;
+        gap: 20px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+      }
+      canvas {
+        border: 1px solid #333;
+        max-width: 100%;
+        height: auto;
+        background: #000;
+      }
+      h3 {
+        text-align: center;
+        font-size: 15px;
+        margin-top: 0;
+      }
+      #loading {
+        display: none;
+        text-align: center;
+        font-size: 1.1em;
+        color: #4ea1ff;
+        margin-top: 10px;
+      }
+      .small {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .attribution {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .section-title {
+        font-size: 16px;
+        margin: 0 0 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <!-- 卡片 1：地圖選擇 + 截圖 -->
+      <div class="card">
+        <div class="header">
+          <h1 class="title">地圖截圖 → 圖片文字去除</h1>
+          <p class="sub">
+            在地圖上選擇範圍後按「擷取地圖畫面」。擷取完成後，再按「開始去除文字」送到後端處理。
+          </p>
+        </div>
+
+        <div class="controls">
+          <input
+            id="query"
+            placeholder="例如：台北 101 或 25.033964,121.564468"
+          />
+          <button id="search" class="btn">搜尋 / 前往</button>
+          <button id="capture" class="btn">擷取地圖畫面</button>
+          <button id="process-map" class="btn" disabled>
+            開始去除文字（使用上方截圖）
+          </button>
+        </div>
+
+        <div id="map"></div>
+
+        <div class="bar">
+          <span class="coord" id="status"
+            >滑動、縮放或點擊地圖以更新座標。</span
+          >
+          <span class="hint">Leaflet + leaflet-image，擷取當前地圖視圖。</span>
+        </div>
+
+        <div class="output" id="map-output">
+          <span class="small"
+            >擷取後會在此顯示縮圖，並同步送到下方「原始圖片」區域作為預覽。</span
+          >
+        </div>
+
+        <div class="attribution">
+          © 地圖資料
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noopener"
+            >OpenStreetMap 參與者</a
+          >
+          · 瓦片：openstreetmap.org · 程式庫：Leaflet, leaflet-image。
+        </div>
+      </div>
+
+      <!-- 卡片 2：原始 / 處理後 Canvas -->
+      <div class="card" id="canvas-card">
+        <div>
+          <h2 class="section-title">圖片文字去除預覽</h2>
+          <p class="small">
+            來源可以是上方「地圖截圖」，或是下方手動上傳圖片。
+          </p>
+        </div>
+
+        <!-- 手動上傳（保留原本功能） -->
+        <form id="upload-form" style="margin-top: 10px">
+          <input
+            type="file"
+            id="image-file"
+            name="file"
+            accept=".jpg,.jpeg,.png"
+          />
+          <button type="submit" class="btn">手動上傳並去除文字</button>
+        </form>
+
+        <div id="loading">處理中，請稍候...</div>
+
+        <div id="canvas-container">
+          <div>
+            <h3>原始圖片</h3>
+            <canvas id="original-canvas"></canvas>
+          </div>
+
+          <div>
+            <h3>處理後（Inpainting）</h3>
+            <canvas id="processed-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leaflet JS & leaflet-image -->
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="https://unpkg.com/leaflet-image/leaflet-image.js"></script>
+
+    <script>
+      // ========== 下半部共用的 Canvas / 上傳邏輯 ==========
+
+      const uploadForm = document.getElementById("upload-form");
+      const imageFile = document.getElementById("image-file");
+      const originalCanvas = document.getElementById("original-canvas");
+      const processedCanvas = document.getElementById("processed-canvas");
+      const loading = document.getElementById("loading");
+
+      const originalCtx = originalCanvas.getContext("2d");
+      const processedCtx = processedCanvas.getContext("2d");
+
+      // Helper: 共用的送到 /upload 的函式
+      async function runRemoveText(formData) {
+        loading.style.display = "block";
+        processedCanvas.width = 0;
+        processedCanvas.height = 0;
+
+        try {
+          const response = await fetch("/upload", {
+            method: "POST",
+            body: formData,
+          });
+
+          const result = await response.json();
+          loading.style.display = "none";
+
+          if (result.success) {
+            const processedImg = new Image();
+            processedImg.onload = () => {
+              processedCanvas.width = processedImg.width;
+              processedCanvas.height = processedImg.height;
+              processedCtx.drawImage(processedImg, 0, 0);
+            };
+            processedImg.src =
+              result.processed_image_url + "?t=" + new Date().getTime();
+          } else {
+            alert("處理未完成：" + (result.error || "未知錯誤"));
+            if (result.gemini_raw_output) {
+              console.log("Gemini raw output:", result.gemini_raw_output);
+            }
+          }
+        } catch (error) {
+          loading.style.display = "none";
+          alert("發生錯誤：" + error.message);
+        }
+      }
+
+      // 手動上傳檔案 → /upload
+      imageFile.addEventListener("change", (event) => {
+        const file = event.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+              originalCanvas.width = img.width;
+              originalCanvas.height = img.height;
+              originalCtx.drawImage(img, 0, 0);
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+
+      uploadForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const file = imageFile.files[0];
+        if (!file) {
+          alert("請先選擇一張圖片！");
+          return;
+        }
+        const formData = new FormData();
+        formData.append("file", file);
+        runRemoveText(formData);
+      });
+
+      // Helper：把 dataURL 轉成 Blob
+      function dataURLToBlob(dataUrl) {
+        const arr = dataUrl.split(",");
+        const mimeMatch = arr[0].match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : "image/png";
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new Blob([u8arr], { type: mime });
+      }
+
+      // ========== 上半部：Leaflet 地圖 + 截圖 ==========
+
+      // 初始化地圖（台北市中心附近）
+      const map = L.map("map", { zoomControl: true }).setView(
+        [25.0418, 121.565],
+        13
+      );
+
+      const osm = L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+          maxZoom: 19,
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          crossOrigin: true, // 盡量啟用 CORS 以支援 canvas 匯出
+        }
+      ).addTo(map);
+
+      let marker = null;
+      const statusEl = document.getElementById("status");
+      const mapOutput = document.getElementById("map-output");
+      const processMapBtn = document.getElementById("process-map");
+      let lastCapturedDataUrl = null;
+
+      function setMarker(latlng) {
+        if (!marker) {
+          marker = L.marker(latlng, { draggable: true }).addTo(map);
+          marker.on("dragend", () => updateStatus(marker.getLatLng()));
+        } else {
+          marker.setLatLng(latlng);
+        }
+        updateStatus(latlng);
+      }
+
+      function updateStatus(latlng) {
+        const center = map.getCenter();
+        statusEl.textContent = `中心: ${center.lat.toFixed(
+          6
+        )}, ${center.lng.toFixed(6)}  |  標記: ${latlng.lat.toFixed(
+          6
+        )}, ${latlng.lng.toFixed(6)}  |  縮放: ${map.getZoom()}`;
+      }
+
+      map.on("click", (e) => setMarker(e.latlng));
+      map.on("moveend", () => {
+        const center = map.getCenter();
+        statusEl.textContent = `中心: ${center.lat.toFixed(
+          6
+        )}, ${center.lng.toFixed(6)}  |  縮放: ${map.getZoom()}`;
+      });
+
+      // 查詢：地址 or lat,lng
+      function parseLatLng(text) {
+        if (!text) return null;
+        const parts = text.split(",").map((t) => t.trim());
+        if (parts.length === 2) {
+          const lat = Number(parts[0]);
+          const lng = Number(parts[1]);
+          if (
+            Number.isFinite(lat) &&
+            Number.isFinite(lng) &&
+            Math.abs(lat) <= 90 &&
+            Math.abs(lng) <= 180
+          ) {
+            return { lat, lng };
+          }
+        }
+        return null;
+      }
+
+      async function geocode(q) {
+        const url = new URL("https://nominatim.openstreetmap.org/search");
+        url.searchParams.set("format", "json");
+        url.searchParams.set("q", q);
+        url.searchParams.set("addressdetails", "1");
+        url.searchParams.set("limit", "1");
+        url.searchParams.set("accept-language", "zh-TW");
+        const resp = await fetch(url.toString(), {
+          headers: { Accept: "application/json" },
+        });
+        if (!resp.ok) throw new Error("Geocoding 失敗");
+        const data = await resp.json();
+        return data && data.length
+          ? { lat: Number(data[0].lat), lng: Number(data[0].lon) }
+          : null;
+      }
+
+      document.getElementById("search").addEventListener("click", async () => {
+        const q = document.getElementById("query").value.trim();
+        if (!q) return;
+        const ll = parseLatLng(q);
+        try {
+          let target;
+          if (ll) {
+            target = ll;
+          } else {
+            target = await geocode(q);
+          }
+          if (target) {
+            map.setView([target.lat, target.lng], Math.max(map.getZoom(), 15));
+            setMarker(target);
+          } else {
+            alert(
+              "找不到位置，請嘗試其他地址或直接輸入經緯度（lat,lng）。"
+            );
+          }
+        } catch (err) {
+          console.error(err);
+          alert("查詢發生錯誤，請稍後再試。");
+        }
+      });
+
+      document
+        .getElementById("query")
+        .addEventListener("keydown", (e) => {
+          if (e.key === "Enter")
+            document.getElementById("search").click();
+        });
+
+      // 按「擷取地圖畫面」→ 生成縮圖 + 放到原始 Canvas 做預覽
+      document
+        .getElementById("capture")
+        .addEventListener("click", () => {
+          leafletImage(map, function (err, canvas) {
+            if (err) {
+              console.error(err);
+              alert("擷取失敗");
+              return;
+            }
+
+            const dataUrl = canvas.toDataURL("image/png");
+            lastCapturedDataUrl = dataUrl;
+
+            // 在上半部顯示縮圖
+            const img = document.createElement("img");
+            img.className = "thumb";
+            img.alt = "地圖截圖";
+            img.src = dataUrl;
+            mapOutput.innerHTML = "";
+            mapOutput.appendChild(img);
+
+            // 同步畫到原始 Canvas，當作「預備處理的原圖」
+            const previewImg = new Image();
+            previewImg.onload = () => {
+              originalCanvas.width = previewImg.width;
+              originalCanvas.height = previewImg.height;
+              originalCtx.drawImage(previewImg, 0, 0);
+            };
+            previewImg.src = dataUrl;
+
+            // 解鎖「開始去除文字」按鈕
+            processMapBtn.disabled = false;
+          });
+        });
+
+      // 按「開始去除文字」→ 把截圖當成檔案送到 /upload
+      processMapBtn.addEventListener("click", () => {
+        if (!lastCapturedDataUrl) {
+          alert("請先按上方『擷取地圖畫面』生成截圖。");
+          return;
+        }
+
+        const blob = dataURLToBlob(lastCapturedDataUrl);
+        const file = new File([blob], "map_capture.png", {
+          type: "image/png",
+        });
+        const formData = new FormData();
+        formData.append("file", file);
+
+        runRemoveText(formData);
+      });
+    </script>
+  </body>
+</html>
